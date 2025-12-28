@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Scrolling Platformer Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Assets from free sources
+        const playerSpriteSheet = new Image();
+        playerSpriteSheet.src = 'https://opengameart.org/sites/default/files/pirate_0.png'; // Pirate character sprite sheet from OpenGameArt (CC-BY 3.0)
+
+        const tileSet = new Image();
+        tileSet.src = 'https://opengameart.org/sites/default/files/tileset_2_4.png'; // Platform tileset from OpenGameArt (CC0)
+
+        const backgroundImg = new Image();
+        backgroundImg.src = 'https://opengameart.org/sites/default/files/background0.png'; // Background from OpenGameArt (CC-BY-SA 3.0)
+
+        // Game variables
+        let imagesLoaded = 0;
+        const totalImages = 3;
+        function imageLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                startGame();
+            }
+        }
+        playerSpriteSheet.onload = imageLoaded;
+        tileSet.onload = imageLoaded;
+        backgroundImg.onload = imageLoaded;
+
+        let cameraX = 0;
+        const gravity = 0.5;
+        const jumpForce = -12;
+        let isJumping = false;
+
+        const player = {
+            x: 100,
+            y: canvas.height - 100,
+            width: 40,
+            height: 32,
+            vy: 0,
+            frame: 0,
+            frameCount: 4, // Assume 4 frames for running animation
+            frameOffset: 5, // Assume running starts at frame 5 (guess based on typical layouts)
+            speed: 3
+        };
+
+        const platforms = [
+            {x: 0, y: canvas.height - 50, width: 200, height: 16, tileX: 0, tileY: 0}, // Ground
+            {x: 300, y: canvas.height - 150, width: 100, height: 16, tileX: 16, tileY: 0},
+            {x: 500, y: canvas.height - 250, width: 150, height: 16, tileX: 32, tileY: 0},
+            {x: 700, y: canvas.height - 100, width: 120, height: 16, tileX: 0, tileY: 16},
+            // Add more for longer level
+            {x: 1000, y: canvas.height - 200, width: 100, height: 16, tileX: 16, tileY: 16},
+            {x: 1300, y: canvas.height - 300, width: 150, height: 16, tileX: 32, tileY: 16},
+            {x: 1600, y: canvas.height - 150, width: 200, height: 16, tileX: 0, tileY: 32}
+        ];
+
+        function startGame() {
+            requestAnimationFrame(gameLoop);
+            canvas.addEventListener('touchstart', jump);
+        }
+
+        function jump() {
+            if (!isJumping) {
+                player.vy = jumpForce;
+                isJumping = true;
+            }
+        }
+
+        function update() {
+            // Player physics
+            player.vy += gravity;
+            player.y += player.vy;
+
+            // Scrolling
+            cameraX += player.speed;
+
+            // Collision with platforms
+            isJumping = true;
+            for (let platform of platforms) {
+                if (
+                    player.x + player.width > platform.x - cameraX &&
+                    player.x < platform.x - cameraX + platform.width &&
+                    player.y + player.height > platform.y &&
+                    player.y + player.height + player.vy <= platform.y
+                ) {
+                    player.y = platform.y - player.height;
+                    player.vy = 0;
+                    isJumping = false;
+                }
+            }
+
+            // Ground collision (simple)
+            if (player.y + player.height > canvas.height - 50) {
+                player.y = canvas.height - 50 - player.height;
+                player.vy = 0;
+                isJumping = false;
+            }
+
+            // Animation
+            player.frame = (player.frame + 0.2) % player.frameCount; // Slow animation
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background (parallax simple tiling)
+            const bgWidth = backgroundImg.width;
+            const bgOffset = (cameraX * 0.5) % bgWidth; // Parallax speed 0.5
+            ctx.drawImage(backgroundImg, -bgOffset, 0, bgWidth, canvas.height);
+            ctx.drawImage(backgroundImg, bgWidth - bgOffset, 0, bgWidth, canvas.height);
+
+            // Draw platforms
+            for (let platform of platforms) {
+                const platX = platform.x - cameraX;
+                if (platX + platform.width > 0 && platX < canvas.width) {
+                    // Draw tiled platform
+                    for (let i = 0; i < platform.width / 16; i++) {
+                        ctx.drawImage(
+                            tileSet,
+                            platform.tileX, platform.tileY, 16, 16,
+                            platX + i * 16, platform.y, 16, 16
+                        );
+                    }
+                }
+            }
+
+            // Draw player
+            const frameY = Math.floor(player.frame + player.frameOffset) * player.height;
+            ctx.drawImage(
+                playerSpriteSheet,
+                0, frameY, player.width, player.height,
+                player.x, player.y, player.width * 2, player.height * 2 // Scale up for visibility
+            );
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+    </script>
+</body>
+</html>
