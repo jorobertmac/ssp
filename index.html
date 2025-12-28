@@ -32,19 +32,25 @@
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
-        // Assets from free sources
+        // Assets from free sources (OpenGameArt)
         const playerSpriteSheet = new Image();
-        playerSpriteSheet.src = 'https://opengameart.org/sites/default/files/pirate_0.png'; // Pirate character sprite sheet from OpenGameArt (CC-BY 3.0)
+        playerSpriteSheet.src = 'https://opengameart.org/sites/default/files/pirate_0.png'; // Pirate character (CC-BY 3.0)
 
         const tileSet = new Image();
-        tileSet.src = 'https://opengameart.org/sites/default/files/tileset_2_4.png'; // Platform tileset from OpenGameArt (CC0)
+        tileSet.src = 'https://opengameart.org/sites/default/files/tileset_2_4.png'; // Tileset (CC0)
 
         const backgroundImg = new Image();
-        backgroundImg.src = 'https://opengameart.org/sites/default/files/background0.png'; // Background from OpenGameArt (CC-BY-SA 3.0)
+        backgroundImg.src = 'https://opengameart.org/sites/default/files/background0.png'; // Background (CC-BY-SA 3.0)
+
+        const coinImg = new Image();
+        coinImg.src = 'https://opengameart.org/sites/default/files/GoldCoin.png'; // Gold coin (CC0)
+
+        const enemyImg = new Image();
+        enemyImg.src = 'https://opengameart.org/sites/default/files/crab.png'; // Crab enemy (CC-BY 3.0)
 
         // Game variables
         let imagesLoaded = 0;
-        const totalImages = 3;
+        const totalImages = 5;
         function imageLoaded() {
             imagesLoaded++;
             if (imagesLoaded === totalImages) {
@@ -54,11 +60,16 @@
         playerSpriteSheet.onload = imageLoaded;
         tileSet.onload = imageLoaded;
         backgroundImg.onload = imageLoaded;
+        coinImg.onload = imageLoaded;
+        enemyImg.onload = imageLoaded;
 
         let cameraX = 0;
         const gravity = 0.5;
         const jumpForce = -12;
         let isJumping = false;
+        let score = 0;
+        let gameOver = false;
+        const winScore = 20; // Collect 20 coins to win
 
         const player = {
             x: 100,
@@ -67,21 +78,59 @@
             height: 32,
             vy: 0,
             frame: 0,
-            frameCount: 4, // Assume 4 frames for running animation
-            frameOffset: 5, // Assume running starts at frame 5 (guess based on typical layouts)
+            frameCount: 4,
+            frameOffset: 5, // Assuming running animation starts at frame 5
             speed: 3
         };
 
-        const platforms = [
-            {x: 0, y: canvas.height - 50, width: 200, height: 16, tileX: 0, tileY: 0}, // Ground
-            {x: 300, y: canvas.height - 150, width: 100, height: 16, tileX: 16, tileY: 0},
-            {x: 500, y: canvas.height - 250, width: 150, height: 16, tileX: 32, tileY: 0},
-            {x: 700, y: canvas.height - 100, width: 120, height: 16, tileX: 0, tileY: 16},
-            // Add more for longer level
-            {x: 1000, y: canvas.height - 200, width: 100, height: 16, tileX: 16, tileY: 16},
-            {x: 1300, y: canvas.height - 300, width: 150, height: 16, tileX: 32, tileY: 16},
-            {x: 1600, y: canvas.height - 150, width: 200, height: 16, tileX: 0, tileY: 32}
+        let platforms = [
+            {x: 0, y: canvas.height - 50, width: 400, height: 16, tileX: 0, tileY: 0}, // Starting ground
+            {x: 500, y: canvas.height - 150, width: 200, height: 16, tileX: 16, tileY: 0},
+            {x: 800, y: canvas.height - 250, width: 150, height: 16, tileX: 32, tileY: 0}
         ];
+
+        let coins = [];
+        let enemies = [];
+
+        function generatePlatform() {
+            const lastPlat = platforms[platforms.length - 1];
+            const newX = lastPlat.x + lastPlat.width + Math.random() * 200 + 100;
+            const newY = canvas.height - (Math.random() * 200 + 100);
+            const newWidth = Math.random() * 150 + 100;
+            const tileIndex = Math.floor(Math.random() * 3);
+            platforms.push({
+                x: newX,
+                y: newY,
+                width: newWidth,
+                height: 16,
+                tileX: tileIndex * 16,
+                tileY: tileIndex * 16
+            });
+
+            // Add coin with 70% chance
+            if (Math.random() < 0.7) {
+                coins.push({
+                    x: newX + Math.random() * newWidth,
+                    y: newY - 32,
+                    width: 32,
+                    height: 32,
+                    collected: false
+                });
+            }
+
+            // Add enemy with 50% chance
+            if (Math.random() < 0.5) {
+                enemies.push({
+                    x: newX + Math.random() * newWidth,
+                    y: newY - 32,
+                    width: 32,
+                    height: 32,
+                    speed: (Math.random() * 2 + 1) * (Math.random() < 0.5 ? 1 : -1), // Left or right
+                    minX: newX,
+                    maxX: newX + newWidth
+                });
+            }
+        }
 
         function startGame() {
             requestAnimationFrame(gameLoop);
@@ -89,77 +138,192 @@
         }
 
         function jump() {
-            if (!isJumping) {
+            if (!isJumping && !gameOver) {
                 player.vy = jumpForce;
                 isJumping = true;
             }
         }
 
         function update() {
+            if (gameOver) return;
+
             // Player physics
             player.vy += gravity;
             player.y += player.vy;
+            player.x += player.speed / 2; // Slight forward movement, but mostly camera
 
             // Scrolling
             cameraX += player.speed;
 
+            // Generate new platforms if needed
+            if (platforms[platforms.length - 1].x - cameraX < canvas.width * 1.5) {
+                generatePlatform();
+            }
+
             // Collision with platforms
-            isJumping = true;
+            let onPlatform = false;
             for (let platform of platforms) {
+                const platX = platform.x - cameraX;
                 if (
-                    player.x + player.width > platform.x - cameraX &&
-                    player.x < platform.x - cameraX + platform.width &&
-                    player.y + player.height > platform.y &&
-                    player.y + player.height + player.vy <= platform.y
+                    player.x + player.width > platX &&
+                    player.x < platX + platform.width &&
+                    player.y + player.height + player.vy > platform.y &&
+                    player.y + player.height <= platform.y &&
+                    player.vy >= 0 // Only when falling
                 ) {
                     player.y = platform.y - player.height;
                     player.vy = 0;
-                    isJumping = false;
+                    onPlatform = true;
+                }
+            }
+            isJumping = !onPlatform;
+
+            // Fall off screen = game over
+            if (player.y > canvas.height) {
+                gameOver = true;
+            }
+
+            // Collect coins
+            for (let coin of coins) {
+                const coinX = coin.x - cameraX;
+                if (!coin.collected &&
+                    player.x + player.width > coinX &&
+                    player.x < coinX + coin.width &&
+                    player.y + player.height > coin.y &&
+                    player.y < coin.y + coin.height
+                ) {
+                    coin.collected = true;
+                    score++;
+                    if (score >= winScore) {
+                        gameOver = true; // Win
+                    }
                 }
             }
 
-            // Ground collision (simple)
-            if (player.y + player.height > canvas.height - 50) {
-                player.y = canvas.height - 50 - player.height;
-                player.vy = 0;
-                isJumping = false;
+            // Enemy movement and collision
+            for (let enemy of enemies) {
+                enemy.x += enemy.speed;
+                if (enemy.x < enemy.minX) {
+                    enemy.x = enemy.minX;
+                    enemy.speed = -enemy.speed;
+                } else if (enemy.x + enemy.width > enemy.maxX) {
+                    enemy.x = enemy.maxX - enemy.width;
+                    enemy.speed = -enemy.speed;
+                }
+
+                const enemyX = enemy.x - cameraX;
+                if (
+                    player.x + player.width > enemyX &&
+                    player.x < enemyX + enemy.width &&
+                    player.y + player.height > enemy.y &&
+                    player.y < enemy.y + enemy.height
+                ) {
+                    gameOver = true; // Hit enemy
+                }
             }
 
+            // Clean up off-screen items
+            platforms = platforms.filter(p => p.x - cameraX + p.width > 0);
+            coins = coins.filter(c => !c.collected && c.x - cameraX + c.width > 0);
+            enemies = enemies.filter(e => e.x - cameraX + e.width > 0);
+
             // Animation
-            player.frame = (player.frame + 0.2) % player.frameCount; // Slow animation
+            if (!isJumping) {
+                player.frame = (player.frame + 0.2) % player.frameCount;
+            } else {
+                player.frame = 0; // Jump frame, assume first
+            }
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw background (parallax simple tiling)
+            // Background
             const bgWidth = backgroundImg.width;
-            const bgOffset = (cameraX * 0.5) % bgWidth; // Parallax speed 0.5
+            const bgOffset = (cameraX * 0.5) % bgWidth;
             ctx.drawImage(backgroundImg, -bgOffset, 0, bgWidth, canvas.height);
             ctx.drawImage(backgroundImg, bgWidth - bgOffset, 0, bgWidth, canvas.height);
 
-            // Draw platforms
+            // Platforms
             for (let platform of platforms) {
                 const platX = platform.x - cameraX;
                 if (platX + platform.width > 0 && platX < canvas.width) {
-                    // Draw tiled platform
-                    for (let i = 0; i < platform.width / 16; i++) {
+                    const tileSize = 16;
+                    const numTiles = Math.ceil(platform.width / tileSize);
+                    for (let i = 0; i < numTiles; i++) {
                         ctx.drawImage(
                             tileSet,
-                            platform.tileX, platform.tileY, 16, 16,
-                            platX + i * 16, platform.y, 16, 16
+                            platform.tileX, platform.tileY, tileSize, tileSize,
+                            platX + i * tileSize, platform.y, tileSize, tileSize
                         );
                     }
                 }
             }
 
-            // Draw player
-            const frameY = Math.floor(player.frame + player.frameOffset) * player.height;
+            // Coins
+            for (let coin of coins) {
+                if (!coin.collected) {
+                    const coinX = coin.x - cameraX;
+                    if (coinX + coin.width > 0 && coinX < canvas.width) {
+                        ctx.drawImage(coinImg, coinX, coin.y, coin.width, coin.height);
+                    }
+                }
+            }
+
+            // Enemies
+            for (let enemy of enemies) {
+                const enemyX = enemy.x - cameraX;
+                if (enemyX + enemy.width > 0 && enemyX < canvas.width) {
+                    ctx.drawImage(enemyImg, enemyX, enemy.y, enemy.width, enemy.height);
+                }
+            }
+
+            // Player
+            const frameIndex = Math.floor(player.frame + player.frameOffset);
+            const spriteWidth = 40; // Adjust if needed
+            const spriteHeight = 32;
             ctx.drawImage(
                 playerSpriteSheet,
-                0, frameY, player.width, player.height,
-                player.x, player.y, player.width * 2, player.height * 2 // Scale up for visibility
+                0, frameIndex * spriteHeight, spriteWidth, spriteHeight,
+                player.x, player.y, spriteWidth * 1.5, spriteHeight * 1.5 // Scaled
             );
+
+            // Score
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Score: ${score}`, 10, 30);
+
+            // Game over / Win
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = '40px Arial';
+                const message = score >= winScore ? 'You Win!' : 'Game Over';
+                ctx.fillText(message, canvas.width / 2 - 100, canvas.height / 2);
+                ctx.font = '20px Arial';
+                ctx.fillText('Tap to restart', canvas.width / 2 - 80, canvas.height / 2 + 40);
+                canvas.removeEventListener('touchstart', jump);
+                canvas.addEventListener('touchstart', restart);
+            }
+        }
+
+        function restart() {
+            cameraX = 0;
+            player.x = 100;
+            player.y = canvas.height - 100;
+            player.vy = 0;
+            score = 0;
+            gameOver = false;
+            platforms = [
+                {x: 0, y: canvas.height - 50, width: 400, height: 16, tileX: 0, tileY: 0},
+                {x: 500, y: canvas.height - 150, width: 200, height: 16, tileX: 16, tileY: 0},
+                {x: 800, y: canvas.height - 250, width: 150, height: 16, tileX: 32, tileY: 0}
+            ];
+            coins = [];
+            enemies = [];
+            canvas.removeEventListener('touchstart', restart);
+            canvas.addEventListener('touchstart', jump);
         }
 
         function gameLoop() {
